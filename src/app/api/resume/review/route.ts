@@ -38,6 +38,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Verify user exists before saving
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', user_id)
+      .single()
+
+    if (userError || !userData) {
+      console.error('User verification error:', userError)
+      return NextResponse.json(
+        { 
+          error: 'User not found. Please make sure you are logged in with a valid account.',
+          details: userError?.message || 'User does not exist in database',
+          code: userError?.code
+        },
+        { status: 404 }
+      )
+    }
+
     // Store review in database
     try {
       const { data, error } = await supabase
@@ -70,6 +89,18 @@ export async function POST(request: NextRequest) {
               details: error.message 
             },
             { status: 500 }
+          )
+        }
+        // Check for foreign key constraint violation
+        if (error.code === '23503' || error.message.includes('foreign key constraint')) {
+          return NextResponse.json(
+            { 
+              error: 'User not found in database. Please log out and log in again.',
+              details: error.message,
+              code: error.code,
+              hint: 'The user_id does not exist in the users table. This might happen if the user account was deleted or the ID is incorrect.'
+            },
+            { status: 400 }
           )
         }
         return NextResponse.json(

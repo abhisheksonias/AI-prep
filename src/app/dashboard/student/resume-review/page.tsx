@@ -152,8 +152,16 @@ export default function ResumeReviewPage() {
         setResumeText('')
       } else {
         const errorMsg = data.error || 'Failed to save review'
-        const details = data.details ? ` (${data.details})` : ''
-        setError(`${errorMsg}${details}`)
+        let details = data.details ? ` (${data.details})` : ''
+        
+        // Special handling for foreign key constraint errors
+        if (data.code === '23503' || errorMsg.includes('foreign key') || errorMsg.includes('User not found')) {
+          setError(
+            'User account issue detected. Please log out and log in again, then try saving the review.'
+          )
+        } else {
+          setError(`${errorMsg}${details}`)
+        }
       }
     } catch (error) {
       console.error('Error saving review:', error)
