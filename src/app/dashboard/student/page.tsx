@@ -44,10 +44,10 @@ export default function StudentDashboard() {
     },
     {
       id: '3',
-      title: 'Technical Interview Prep',
-      description: 'Role-based technical question practice',
+      title: 'Technical Exam',
+      description: 'DB-driven coding & web fundamentals MCQ',
       icon: 'code',
-      href: '/dashboard/student/mock-interview',
+      href: '/dashboard/student/technical-exam',
     },
     {
       id: '4',
