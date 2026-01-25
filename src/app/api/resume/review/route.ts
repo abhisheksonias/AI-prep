@@ -1,152 +1,150 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabaseClient'
-import { analyzeResume } from '@/lib/resume-analyzer'
+import { analyzeResumeAndGenerateFeedback } from '@/ai/flows/analyze-resume-and-generate-feedback'
 
-// POST - Create new resume review
+// POST /api/resume/review - analyze and save a review
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { user_id, resume_text } = body
+    const { user_id, resume_text, jobDescription } = body || {}
 
-    if (!user_id || !resume_text) {
+    if (!user_id) {
+      return NextResponse.json({ error: 'user_id is required' }, { status: 400 })
+    }
+    const trimmed = (resume_text || '').trim()
+    if (!trimmed || trimmed.length < 100) {
       return NextResponse.json(
-        { error: 'user_id and resume_text are required' },
+        { error: 'resume_text must be at least 100 characters' },
         { status: 400 }
       )
     }
 
-    if (resume_text.trim().length < 100) {
-      return NextResponse.json(
-        { error: 'Resume text must be at least 100 characters long' },
-        { status: 400 }
-      )
-    }
-
-    // Analyze resume using Gemini
-    let analysis
-    try {
-      analysis = await analyzeResume(resume_text)
-    } catch (error) {
-      console.error('Error analyzing resume:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      return NextResponse.json(
-        { 
-          error: 'Failed to analyze resume. Please try again.',
-          details: errorMessage 
-        },
-        { status: 500 }
-      )
-    }
-
-    // Verify user exists before saving
-    const { data: userData, error: userError } = await supabase
+    // Verify user exists to avoid foreign key violation
+    const { data: userRow, error: userErr } = await supabase
       .from('users')
       .select('id')
       .eq('id', user_id)
       .single()
-
-    if (userError || !userData) {
-      console.error('User verification error:', userError)
+    if (userErr || !userRow) {
       return NextResponse.json(
-        { 
-          error: 'User not found. Please make sure you are logged in with a valid account.',
-          details: userError?.message || 'User does not exist in database',
-          code: userError?.code
-        },
+        { error: 'User not found', details: userErr?.message },
         { status: 404 }
       )
     }
 
-    // Store review in database
+    // Re-analyze before saving (or use provided jobDescription if present)
+    const jobDesc = typeof jobDescription === 'string' && jobDescription.trim()
+      ? jobDescription.trim()
+      : 'General software development role'
+
+    let analysis
     try {
-      const { data, error } = await supabase
-        .from('resume_reviews')
-        .insert([
-          {
-            user_id,
-            resume_text: resume_text.trim(),
-            ats_score: analysis.ats_score,
-            overall_rating: analysis.overall_rating,
-            analysis: {
-              strengths: analysis.strengths,
-              weaknesses: analysis.weaknesses,
-              key_improvements: analysis.key_improvements,
-              ats_analysis: analysis.ats_analysis,
-              confidence_boost: analysis.confidence_boost,
-            },
-          },
-        ])
-        .select()
-        .single()
-
-      if (error) {
-        console.error('Error saving review:', error)
-        // Check if table doesn't exist
-        if (error.code === '42P01' || error.message.includes('does not exist')) {
-          return NextResponse.json(
-            { 
-              error: 'Database table not found. Please run the SQL schema from resume_review_schema.sql in Supabase.',
-              details: error.message 
-            },
-            { status: 500 }
-          )
-        }
-        // Check for foreign key constraint violation
-        if (error.code === '23503' || error.message.includes('foreign key constraint')) {
-          return NextResponse.json(
-            { 
-              error: 'User not found in database. Please log out and log in again.',
-              details: error.message,
-              code: error.code,
-              hint: 'The user_id does not exist in the users table. This might happen if the user account was deleted or the ID is incorrect.'
-            },
-            { status: 400 }
-          )
-        }
-        return NextResponse.json(
-          { error: 'Failed to save review', details: error.message, code: error.code },
-          { status: 500 }
-        )
-      }
-
-      return NextResponse.json({
-        success: true,
-        review: data,
-        message: 'Resume reviewed successfully',
+      analysis = await analyzeResumeAndGenerateFeedback({
+        resumeText: trimmed,
+        jobDescription: jobDesc,
       })
-    } catch (dbError) {
-      console.error('Database error:', dbError)
-      const errorMessage = dbError instanceof Error ? dbError.message : 'Unknown database error'
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
       return NextResponse.json(
-        { error: 'Database error', details: errorMessage },
+        { error: 'Failed to analyze resume', details: msg },
         { status: 500 }
       )
     }
 
-  } catch (error) {
-    console.error('Error in POST resume review:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json(
-      { 
-        error: 'Internal server error',
-        details: errorMessage
+    const keywordsMatch = analysis.metrics?.totalKeywordsInJobDescription
+      ? Math.round(
+          (analysis.metrics.keywordsInResume /
+            Math.max(analysis.metrics.totalKeywordsInJobDescription, 1)) * 100
+        )
+      : Math.min(Math.max(analysis.matchScore, 0), 100)
+
+    const overallRating = (() => {
+      const s = analysis.matchScore
+      if (s >= 85) return 'Excellent'
+      if (s >= 70) return 'Good'
+      if (s >= 50) return 'Fair'
+      return 'Needs Improvement'
+    })()
+
+    const improvements = (analysis.keyImprovements || []).map((it) => ({
+      category: it.title || 'Improvement',
+      suggestion: it.suggestion || '',
+      priority: analysis.matchScore < 50 ? 'High' : analysis.matchScore < 70 ? 'Medium' : 'Low',
+    }))
+
+    const weaknesses = (() => {
+      const text = (analysis.missingSkills || '').trim()
+      if (!text) return [] as string[]
+      const parts = text.split(/\n+|,\s*/).map((p) => p.trim()).filter(Boolean)
+      return parts.slice(0, 10)
+    })()
+
+    // Build analysis JSONB structure per schema
+    const analysisJson = {
+      strengths: (analysis.matchedKeywords || []).slice(0, 10),
+      weaknesses,
+      key_improvements: improvements,
+      ats_analysis: {
+        keywords_match: keywordsMatch,
+        formatting_score: 70,
+        content_quality: Math.max(60, Math.min(95, Math.round(analysis.matchScore))),
       },
+      confidence_boost: analysis.feedback || 'Keep refining your resume for better alignment.',
+    }
+
+    const { data: inserted, error: dbErr } = await supabase
+      .from('resume_reviews')
+      .insert({
+        user_id,
+        resume_text: trimmed,
+        ats_score: analysis.matchScore,
+        overall_rating: overallRating,
+        analysis: analysisJson,
+      })
+      .select()
+
+    if (dbErr) {
+      return NextResponse.json(
+        { error: 'Failed to save review', details: dbErr.message },
+        { status: 500 }
+      )
+    }
+
+    const review = Array.isArray(inserted) ? inserted[0] : inserted
+    return NextResponse.json({ success: true, review })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json(
+      { error: 'Internal server error', details: msg },
       { status: 500 }
     )
   }
 }
 
-// GET - Fetch resume review history
+// GET /api/resume/review?user_id=... - list reviews for a user
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams
-    const userId = searchParams.get('user_id')
+    const scope = request.nextUrl.searchParams.get('scope')
+    const userId = request.nextUrl.searchParams.get('user_id')
+
+    if (scope === 'all') {
+      const { data, error } = await supabase
+        .from('resume_reviews')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        return NextResponse.json(
+          { error: 'Failed to fetch reviews', details: error.message },
+          { status: 500 }
+        )
+      }
+
+      return NextResponse.json({ success: true, reviews: data || [] })
+    }
 
     if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'user_id is required' }, { status: 400 })
     }
 
     const { data, error } = await supabase
@@ -154,23 +152,19 @@ export async function GET(request: NextRequest) {
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(20)
 
     if (error) {
-      console.error('Error fetching reviews:', error)
       return NextResponse.json(
-        { error: 'Failed to fetch reviews' },
+        { error: 'Failed to fetch reviews', details: error.message },
         { status: 500 }
       )
     }
 
-    return NextResponse.json({
-      reviews: data || [],
-    })
+    return NextResponse.json({ success: true, reviews: data || [] })
   } catch (error) {
-    console.error('Error in GET resume reviews:', error)
+    const msg = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: msg },
       { status: 500 }
     )
   }

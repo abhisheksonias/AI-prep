@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { createClient } from '@supabase/supabase-js'
 
 interface ProfileData {
   resume_text: string
@@ -12,6 +13,7 @@ interface ProfileData {
   career_goal: string
   interests: string[]
   target_company_type: string
+  resume_url?: string
 }
 
 export default function ProfilePage() {
@@ -28,10 +30,13 @@ export default function ProfilePage() {
     career_goal: '',
     interests: [],
     target_company_type: '',
+    resume_url: '',
   })
 
   const [skillInput, setSkillInput] = useState('')
   const [interestInput, setInterestInput] = useState('')
+  const [resumeFile, setResumeFile] = useState<File | null>(null)
+  const [uploadingResume, setUploadingResume] = useState(false)
 
   // Load profile data
   useEffect(() => {
@@ -49,6 +54,7 @@ export default function ProfilePage() {
             career_goal: data.profile.career_goal ?? '',
             interests: Array.isArray(data.profile.interests) ? data.profile.interests : [],
             target_company_type: data.profile.target_company_type ?? '',
+            resume_url: data.profile.resume_url ?? '',
           })
         }
       } catch (error) {
@@ -95,6 +101,91 @@ export default function ProfilePage() {
     })
   }
 
+  const extractFilePathFromUrl = (url: string): string | null => {
+    try {
+      const urlObj = new URL(url)
+      const pathParts = urlObj.pathname.split('/storage/v1/object/public/')
+      if (pathParts.length > 1) {
+        return decodeURIComponent(pathParts[1])
+      }
+    } catch (error) {
+      console.error('Error extracting file path:', error)
+    }
+    return null
+  }
+
+  const deleteOldResume = async (supabase: any, oldResumeUrl: string) => {
+    try {
+      const filePath = extractFilePathFromUrl(oldResumeUrl)
+      if (filePath) {
+        await supabase.storage.from('resumes').remove([filePath])
+      }
+    } catch (error) {
+      console.error('Error deleting old resume:', error)
+      // Don't fail the upload if delete fails
+    }
+  }
+
+  const handleResumeUpload = async (file: File) => {
+    if (!user?.id) return
+
+    setUploadingResume(true)
+    setError('')
+    setSuccess('')
+    
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+      if (!supabaseUrl || !supabaseAnonKey) {
+        setError('Supabase configuration missing')
+        return
+      }
+
+      const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+      // Delete old resume if it exists
+      if (profileData.resume_url) {
+        await deleteOldResume(supabase, profileData.resume_url)
+      }
+
+      // Create file path with timestamp to ensure uniqueness
+      const fileExtension = file.name.split('.').pop()
+      const fileName = `${user.id}-${Date.now()}.${fileExtension}`
+      const filePath = `resumes/${user.id}/${fileName}`
+
+      // Upload to Supabase Storage
+      const { error: uploadError, data } = await supabase.storage
+        .from('resumes')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false,
+        })
+
+      if (uploadError) {
+        setError(`Failed to upload resume: ${uploadError.message}`)
+        return
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('resumes')
+        .getPublicUrl(filePath)
+
+      setProfileData({
+        ...profileData,
+        resume_url: urlData.publicUrl,
+      })
+      setResumeFile(null)
+      setSuccess('Resume uploaded successfully!')
+    } catch (error) {
+      console.error('Error uploading resume:', error)
+      setError('Failed to upload resume')
+    } finally {
+      setUploadingResume(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -110,6 +201,7 @@ export default function ProfilePage() {
         body: JSON.stringify({
           user_id: user?.id,
           resume_text: profileData.resume_text || null,
+          resume_url: profileData.resume_url || null,
           skills: profileData.skills.length > 0 ? profileData.skills : null,
           career_goal: profileData.career_goal || null,
           interests: profileData.interests.length > 0 ? profileData.interests : null,
@@ -192,22 +284,222 @@ export default function ProfilePage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Resume Display Section - Show if already uploaded */}
+            {profileData.resume_url && (
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg shadow-md p-6 border-2 border-blue-200">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start space-x-4 flex-1">
+                    <div className="flex-shrink-0">
+                      <svg
+                        className="w-12 h-12 text-blue-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                        />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-1">Resume Uploaded</h3>
+                      <p className="text-sm text-gray-600 mb-4">
+                        Your resume is ready and will be used for personalized interviews.
+                      </p>
+                      <div className="flex gap-3 flex-wrap">
+                        <a
+                          href={profileData.resume_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+                        >
+                          <svg
+                            className="w-4 h-4 mr-2"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                            />
+                          </svg>
+                          View Resume
+                        </a>
+                        {/* <button
+                          type="button"
+                          onClick={() => {
+                            setResumeFile(null)
+                            // Reset to show upload area
+                          }}
+                          className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
+                        >
+                          <svg
+                            className="w-4 h-4 mr-2"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2m-4-4l-4 4m0 0l-4-4m4 4V4"
+                            />
+                          </svg>
+                          Replace Resume
+                        </button> */}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Resume Text */}
+            
+
+            {/* Resume Upload */}
             <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Resume / Bio</h2>
-              <textarea
-                id="resume_text"
-                rows={8}
-                value={profileData.resume_text}
-                onChange={(e) =>
-                  setProfileData({ ...profileData, resume_text: e.target.value })
-                }
-                placeholder="Paste your resume text or write a brief bio about yourself, your education, experience, and achievements..."
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              />
-              <p className="mt-2 text-sm text-gray-500">
-                This helps AI generate personalized interview questions for you.
-              </p>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                {profileData.resume_url ? 'Replace Your Resume' : 'Upload Resume (PDF)'}
+              </h2>
+              <div className="space-y-4">
+                {resumeFile && (
+                  <div className="flex items-center justify-between bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <div className="flex items-center space-x-2">
+                      <svg
+                        className="w-5 h-5 text-blue-600"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path d="M8 16.5a1 1 0 11-2 0 1 1 0 012 0zM15 7H4v5h11V7z" />
+                      </svg>
+                      <div>
+                        <p className="text-sm font-medium text-blue-900">{resumeFile.name}</p>
+                        <p className="text-xs text-blue-700">Ready to upload</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await handleResumeUpload(resumeFile)
+                        }}
+                        disabled={uploadingResume}
+                        className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                      >
+                        {uploadingResume ? (
+                          <span className="flex items-center">
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            Uploading...
+                          </span>
+                        ) : (
+                          'Upload'
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setResumeFile(null)}
+                        disabled={uploadingResume}
+                        className="px-4 py-2 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300 disabled:opacity-50 transition-colors font-medium"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {!resumeFile && !profileData.resume_url && (
+                  <div className="flex items-center justify-center w-full">
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <svg
+                          className="w-8 h-8 text-gray-500 mb-2"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                          />
+                        </svg>
+                        <p className="text-sm text-gray-600">
+                          <span className="font-semibold">Click to upload</span> or drag and drop
+                        </p>
+                        <p className="text-xs text-gray-500">PDF files only (Max 10MB)</p>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".pdf"
+                        onChange={(e) => {
+                          if (e.target.files?.[0]) {
+                            const file = e.target.files[0]
+                            if (file.size > 10 * 1024 * 1024) {
+                              setError('File size must be less than 10MB')
+                              return
+                            }
+                            setResumeFile(file)
+                          }
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {!resumeFile && profileData.resume_url && (
+                  <div className="flex items-center justify-center w-full">
+                    <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer bg-indigo-50 hover:bg-indigo-100 transition">
+                      <div className="flex flex-col items-center justify-center pt-3 pb-3">
+                        <svg
+                          className="w-6 h-6 text-indigo-600 mb-1"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                          />
+                        </svg>
+                        <p className="text-sm text-indigo-700">
+                          <span className="font-semibold">Click to replace</span> or drag and drop
+                        </p>
+                        <p className="text-xs text-indigo-600">New PDF only (Max 10MB)</p>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".pdf"
+                        onChange={(e) => {
+                          if (e.target.files?.[0]) {
+                            const file = e.target.files[0]
+                            if (file.size > 10 * 1024 * 1024) {
+                              setError('File size must be less than 10MB')
+                              return
+                            }
+                            setResumeFile(file)
+                          }
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Skills */}
@@ -346,6 +638,7 @@ export default function ProfilePage() {
                 <option value="Both">Both Product and Service</option>
               </select>
             </div>
+
 
             {/* Submit Button */}
             <div className="flex justify-end space-x-4">

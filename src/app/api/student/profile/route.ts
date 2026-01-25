@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('users')
-      .select('id, full_name, email, department, year, resume_text, skills, career_goal, interests, target_company_type')
+      .select('id, full_name, email, department, year, resume_text, resume_url, skills, career_goal, interests, target_company_type')
       .eq('id', userId)
       .single()
 
@@ -52,6 +52,7 @@ export async function PUT(request: NextRequest) {
     const {
       user_id,
       resume_text,
+      resume_url,
       skills,
       career_goal,
       interests,
@@ -71,6 +72,9 @@ export async function PUT(request: NextRequest) {
     if (resume_text !== undefined) {
       updateData.resume_text = resume_text === '' ? null : resume_text
     }
+    if (resume_url !== undefined) {
+      updateData.resume_url = resume_url === '' ? null : resume_url
+    }
     if (skills !== undefined) {
       updateData.skills = Array.isArray(skills) && skills.length > 0 ? skills : null
     }
@@ -88,7 +92,7 @@ export async function PUT(request: NextRequest) {
       .from('users')
       .update(updateData)
       .eq('id', user_id)
-      .select('id, full_name, email, department, year, resume_text, skills, career_goal, interests, target_company_type')
+      .select('id, full_name, email, department, year, resume_text, resume_url, skills, career_goal, interests, target_company_type')
       .single()
 
     if (error) {

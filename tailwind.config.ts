@@ -10,7 +10,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: '#E90E1D',
+        primary: '#4A90E2',
+        'primary-strong': '#357ABD',
+        'primary-soft': '#7AB8F5',
+        secondary: '#E7E7E7',
+        'secondary-muted': '#CFCFCF',
+        ink: '#0F0F10',
+        surface: '#FFFFFF',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
