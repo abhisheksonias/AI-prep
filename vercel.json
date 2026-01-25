@@ -3,24 +3,12 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "env": [
-    {
-      "key": "NEXT_PUBLIC_SUPABASE_URL",
-      "value": "@supabase_url"
-    },
-    {
-      "key": "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-      "value": "@supabase_anon_key"
-    },
-    {
-      "key": "SUPABASE_SERVICE_ROLE_KEY",
-      "value": "@supabase_service_role_key"
-    },
-    {
-      "key": "NEXT_PUBLIC_GENKIT_API_KEY",
-      "value": "@genkit_api_key"
-    }
-  ],
+  "env": {
+    "NEXT_PUBLIC_SUPABASE_URL": "@supabase_url",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "@supabase_anon_key",
+    "SUPABASE_SERVICE_ROLE_KEY": "@supabase_service_role_key",
+    "NEXT_PUBLIC_GENKIT_API_KEY": "@genkit_api_key"
+  },
   "functions": {
     "src/app/api/**/*.ts": {
       "memory": 1024,
