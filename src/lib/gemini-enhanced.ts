@@ -42,7 +42,7 @@ export async function evaluateAnswerWithProfile(
   studentProfile: StudentProfile,
   performanceMetrics?: PerformanceMetrics[]
 ): Promise<GeminiEvaluationResponse> {
-  const apiKey = 'AIzaSyDaG_tKNdzDNnXuDHbsduAp0kTxR6YSBag'
+  const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENAI_API_KEY
 
   if (!apiKey) {
     throw new Error('Gemini API key is not configured')
@@ -178,7 +178,7 @@ export async function buildInterviewContext(
   studentProfile: StudentProfile,
   performanceMetrics?: PerformanceMetrics[]
 ): Promise<string> {
-  const apiKey = 'AIzaSyDaG_tKNdzDNnXuDHbsduAp0kTxR6YSBag'
+  const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENAI_API_KEY
 
   if (!apiKey) {
     throw new Error('Gemini API key is not configured')

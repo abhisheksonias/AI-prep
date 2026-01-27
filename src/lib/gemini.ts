@@ -23,7 +23,7 @@ export async function evaluateAnswerWithGemini(
   topic: string,
   difficulty: string
 ): Promise<GeminiEvaluationResponse> {
-  const apiKey = 'AIzaSyDaG_tKNdzDNnXuDHbsduAp0kTxR6YSBag'
+  const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENAI_API_KEY
 
   if (!apiKey) {
     throw new Error('Gemini API key is not configured')

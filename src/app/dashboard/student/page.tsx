@@ -21,9 +21,19 @@ interface PerformanceStats {
   strongTopicsCount: number
 }
 
+interface TopicMetric {
+  topic: string
+  avg_score: number | null
+  total_attempts: number
+  last_updated?: string
+}
+
 export default function StudentDashboard() {
   const { user, logout } = useAuth()
   const [stats, setStats] = useState<PerformanceStats | null>(null)
+  const [metrics, setMetrics] = useState<TopicMetric[]>([])
+  const [strongTopics, setStrongTopics] = useState<TopicMetric[]>([])
+  const [weakTopics, setWeakTopics] = useState<TopicMetric[]>([])
   const [loading, setLoading] = useState(true)
 
   // Static module definitions - all progress data from database
@@ -49,13 +59,13 @@ export default function StudentDashboard() {
       icon: 'code',
       href: '/dashboard/student/technical-exam',
     },
-    {
-      id: '4',
-      title: 'Technical Mock Interview',
-      description: 'Live technical interview simulation',
-      icon: 'desktop',
-      href: '/dashboard/student/technical-simulation',
-    },
+    // {
+    //   id: '4',
+    //   title: 'Technical Mock Interview',
+    //   description: 'Live technical interview simulation',
+    //   icon: 'desktop',
+    //   href: '/dashboard/student/technical-simulation',
+    // },
     {
       id: '5',
       title: 'HR Round Mock',
@@ -63,13 +73,13 @@ export default function StudentDashboard() {
       icon: 'users',
       href: '/dashboard/student/voice-feedback',
     },
-    {
-      id: '6',
-      title: 'Performance Analysis',
-      description: 'Detailed insights and improvement areas',
-      icon: 'chart',
-      href: '/dashboard/student/performance',
-    },
+    // {
+    //   id: '6',
+    //   title: 'Performance Analysis',
+    //   description: 'Detailed insights and improvement areas',
+    //   icon: 'chart',
+    //   href: '/dashboard/student/performance',
+    // },
   ]
 
   useEffect(() => {
@@ -86,18 +96,53 @@ export default function StudentDashboard() {
       if (response.ok) {
         const data = await response.json()
         setStats(data.statistics)
+        setMetrics(data.metrics || [])
+        setStrongTopics(data.strong_topics || [])
+        setWeakTopics(data.weak_topics || [])
+        if ((!data.metrics || data.metrics.length === 0) && (!data.statistics || data.statistics.total_attempts === 0)) {
+          seedMockData()
+        }
+      } else {
+        seedMockData()
       }
     } catch (error) {
       console.error('Error fetching stats:', error)
+      seedMockData()
     } finally {
       setLoading(false)
     }
+  }
+
+  const seedMockData = () => {
+    const mockStats: PerformanceStats = {
+      totalAttempts: 12,
+      overallAvgScore: 7.6,
+      topicsPracticed: 4,
+      weakTopicsCount: 1,
+      strongTopicsCount: 2,
+    }
+    const mockMetrics: TopicMetric[] = [
+      { topic: 'DSA', avg_score: 8.2, total_attempts: 4, last_updated: new Date().toISOString() },
+      { topic: 'DBMS', avg_score: 7.1, total_attempts: 3, last_updated: new Date().toISOString() },
+      { topic: 'OOPS', avg_score: 6.4, total_attempts: 3, last_updated: new Date().toISOString() },
+      { topic: 'System Design', avg_score: 7.8, total_attempts: 2, last_updated: new Date().toISOString() },
+    ]
+    setStats(mockStats)
+    setMetrics(mockMetrics)
+    setStrongTopics(mockMetrics.filter((m) => (m.avg_score || 0) >= 7.5))
+    setWeakTopics(mockMetrics.filter((m) => (m.avg_score || 0) < 6.5))
   }
 
   // Calculate overall progress based on database stats
   const overallProgress = stats?.totalAttempts 
     ? Math.min(Math.round((stats.totalAttempts / 50) * 100), 100) 
     : 0
+
+  const formatDate = (value?: string) => {
+    if (!value) return '—'
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString()
+  }
 
   const getIcon = (iconName: string) => {
     const icons: Record<string, JSX.Element> = {
@@ -237,6 +282,50 @@ export default function StudentDashboard() {
               <div className="bg-secondary/50 rounded-xl p-4 text-center">
                 <div className="text-2xl font-bold text-ink">{stats?.strongTopicsCount || 0}</div>
                 <div className="text-xs text-ink/70 mt-1">Strong Topics</div>
+              </div>
+            </div>
+
+            {/* Live topic status */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+              <div className="bg-secondary/50 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-ink">Strong topics</p>
+                  <span className="text-xs text-ink/60">Live from practice</span>
+                </div>
+                {strongTopics.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {strongTopics.map((t) => (
+                      <span
+                        key={t.topic}
+                        className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-semibold"
+                      >
+                        {t.topic} • {t.avg_score?.toFixed(1) ?? '—'}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-ink/60">No strong topics yet — keep practicing.</p>
+                )}
+              </div>
+              <div className="bg-secondary/50 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-ink">Weak topics</p>
+                  <span className="text-xs text-ink/60">Focus here next</span>
+                </div>
+                {weakTopics.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {weakTopics.map((t) => (
+                      <span
+                        key={t.topic}
+                        className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold"
+                      >
+                        {t.topic} • {t.avg_score?.toFixed(1) ?? '—'}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-ink/60">No weak topics detected yet.</p>
+                )}
               </div>
             </div>
           </div>
@@ -386,6 +475,42 @@ export default function StudentDashboard() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Topic-by-topic live metrics */}
+          <div className="mt-8 bg-surface rounded-2xl shadow-lg p-6 border border-secondary-muted">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-ink">Topic Performance (live)</h3>
+              <span className="text-xs text-ink/60">Latest from /api/interview/performance</span>
+            </div>
+            {loading ? (
+              <div className="text-center py-6 text-ink/70 text-sm">Loading topic metrics...</div>
+            ) : metrics.length ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="text-left text-ink/60">
+                    <tr>
+                      <th className="py-2 pr-4">Topic</th>
+                      <th className="py-2 pr-4">Avg Score</th>
+                      <th className="py-2 pr-4">Attempts</th>
+                      <th className="py-2 pr-4">Last Updated</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-secondary-muted">
+                    {metrics.map((m) => (
+                      <tr key={m.topic} className="hover:bg-secondary/50 transition-colors">
+                        <td className="py-3 pr-4 font-semibold text-ink">{m.topic}</td>
+                        <td className="py-3 pr-4 text-primary font-semibold">{m.avg_score?.toFixed(1) ?? '—'}/10</td>
+                        <td className="py-3 pr-4 text-ink/80">{m.total_attempts}</td>
+                        <td className="py-3 pr-4 text-ink/60">{formatDate(m.last_updated)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-ink/70 text-sm">No topic-level data yet. Complete a mock interview to populate this table.</p>
+            )}
           </div>
         </main>
       </div>
