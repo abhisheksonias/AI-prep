@@ -302,7 +302,7 @@ export default function ResumeReviewPage() {
                 </div>
 
                 <div className="space-y-4">
-                  <div>
+                  {/* <div>
                     <p className="text-sm text-gray-700">
                       We loaded the resume you saved in your profile. Review it below and start the analysis.
                     </p>
@@ -329,7 +329,7 @@ export default function ResumeReviewPage() {
                         </div>
                       )}
                     </div>
-                  </div>
+                  </div> */}
 
                   {error && (
                     <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg text-sm">
