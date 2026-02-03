@@ -130,7 +130,7 @@ export default function LoginPage() {
           </p>
           <div className="mt-2 text-xs text-gray-500 space-y-1">
             <p><strong>Student:</strong> student@gmail.com / student</p>
-            <p><strong>Admin:</strong> admin@gmail.com.com / admin</p>
+            {/* <p><strong>Admin:</strong> admin@gmail.com.com / admin</p> */}
           </div>
         </div>
       </div>

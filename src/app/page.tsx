@@ -130,7 +130,7 @@ export default function HomePage() {
                 Live practice and async drills included
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-3">
+            {/* <div className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-2xl border border-white/10 bg-ink/70 p-4 shadow-inner shadow-primary/10">
                 <p className="text-3xl font-semibold text-white">12k+</p>
                 <p className="text-sm text-secondary/80">Mock interview sessions completed</p>
@@ -143,7 +143,7 @@ export default function HomePage() {
                 <p className="text-3xl font-semibold text-white">2x</p>
                 <p className="text-sm text-secondary/80">Faster turnaround on resume fixes</p>
               </div>
-            </div>
+            </div> */}
           </div>
 
           <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-ink/70 p-6 shadow-2xl shadow-primary/30">
